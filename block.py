@@ -65,11 +65,12 @@ class BlockChain(object):
         return self.head
         
     def append(self, data):
-        newNode = Node(data)
+        newNode = Node(1, data)
         if self.head is None:
             self.head = newNode
             self.tail = newNode
         else:
+            newNode.seq_num = self.tail.seq_num + 1
             self.tail.next_node = newNode
             self.tail = newNode
 

@@ -15,6 +15,7 @@ BUFFER_SIZE = 1024
 CLIENTS = []
 LAMPORT = 0
 BALANCE = 10
+MAJORITY = 1
 BALLOT_NUM = BallotNum()
 ACCEPT_NUM = BallotNum()
 ACCEPT_VAL = []
@@ -58,48 +59,37 @@ def sendPrepare(ballotNum):
     message = json.dumps(data)
     for client in CLIENTS:
         threading.Thread(target = sendMessage, args = (message, client,)).start()
-    print ('Prepare message sent to clients')
-    
-
-def runPaxos():
-    # Leader election
-    message = "prepare;{};{}".format(BALLOT_NUM, PID)
-    for client in CLIENTS:
-        threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
-        print ('Message sent to client '+str(pid))
-    # Normal Operation    
+    print ('Prepare message sent to clients')   
     
     
 def processInput(data):
     dataList = data.split(',')
     if dataList[0] == 'transfer':
-        # Update getBalance to get balance 
+        # Update getBalance to get balance
+        receiver = int(dataList[1])
+        amount = int(dataList[2])
         amountBefore = chain.getBalance(PID)
-        if amountBefore >= int(dataList[2]) and PID != int(dataList[1]):
-            transaction_log.append()
+        if amountBefore >= amount and PID != receiver:
+            transaction_log.append(Transaction(PID, receiver, amount))
             print("SUCCESS")
             print("Balance before: $"+str(amountBefore))
-            print("Balance after: $"+str(amountBefore-int(dataList[2])))
+            print("Balance after: $"+str(amountBefore-amount))
         else:
             # Run Paxos
             runPaxos()
-            print("INCORRECT")
+            amountBefore = chain.getBalance(PID)
+            if amountBefore >= amount and PID != receiver:
+                transaction_log.append(Transaction(PID, receiver, amount))
+                print("SUCCESS")
+                print("Balance before: $"+str(amountBefore))
+                print("Balance after: $"+str(amountBefore-amount))
+            else:
+                print("INCORRECT")
+            
     elif dataList[0] == 'balance':
         if len(dataList) == 1:
             dataList.append(str(PID))
         print("Balance: $"+str(chain.getBalance(int(dataList[1]))))
-    elif dataList[0] == 'message':
-        if int(dataList[1]) != PID:
-            sendLog(int(dataList[1]))
-        
-
-def acceptBallot(ballotNum):
-    newBallot = False
-    if ballotNum.num > ACCEPT_NUM.num:
-        newBallot = True
-    elif ballotNum.num == ACCEPT_NUM.num and ballotNum.pid > ACCEPT_NUM.pid:
-        newBallot = True
-    return newBallot
     
 
 def processMessage(pid, data):    
@@ -107,14 +97,14 @@ def processMessage(pid, data):
     data = json.loads(data)
     if data['type'] == 'prepare':
         ballotNum = BallotNum.load(data['ballot'])
-        if acceptBallot(ballotNum):
-            ACCEPT_NUM = ballotNum
+        if ballotNum.isHigher(BALLOT_NUM):
+            BALLOT_NUM = ballotNum
             val = []
             for aval in ACCEPT_VAL:
                 val.append(aval.toJSON())
             data = {
                 'type': 'ack',
-                'ballot': ballotNum.toJSON(),
+                'ballot': BALLOT_NUM.toJSON(),
                 'accept_ballot': ACCEPT_NUM.toJSON(),
                 'accept_val': val 
             }
@@ -129,23 +119,60 @@ def processMessage(pid, data):
         acceptVal = data['accept_val']
         if len(acceptVal) != 0 and acceptBallot.isHigher(MAX_ACK_NUM):
             MAX_ACK_NUM = acceptBallot
-            MAX_ACK_VAL.clear()
-            MAX_ACK_VAL = acceptVal
+            MAX_ACK_VAL = acceptVal[:]
+        
+        if ACK_COUNT >= MAJORITY:  
+            log = []          
+            if len(MAX_ACK_VAL) != 0:
+                log = MAX_ACK_VAL[:]
+            else:
+                for val in transaction_log:
+                    log.append(val.toJSON())
+
+            data = {
+                'type': 'leader_accept',
+                'ballot': BALLOT_NUM.toJSON(),
+                'value': log   
+            }
+            message = json.dumps(data)
+            for client in CLIENTS:
+                threading.Thread(target = sendMessage, args = (message, client,)).start()
+            print ('Accept message sent to followers')
+            ACK_COUNT = 0
             
-            
-        if 
-        data = {
-            'type': 'leader_accept',
-            
-        }
          
     elif data['type'] == 'leader_accept':
-        # do stuff and relay message to leader
-        # AC
+        ballotNum = BallotNum.load(data['ballot'])
+        if ballotNum.isHigher(BALLOT_NUM):
+            BALLOT_NUM = ballotNum
+            ACCEPT_NUM = ballotNum
+            val = data['value'][:]
+            ACCEPT_VAL = [ Transaction.load(val) for val in data['value'] ]
+            data = {
+                'type': 'accept',
+                'ballot': BALLOT_NUM.toJSON(),
+                'value': val
+            }
+            message = json.dumps(data)
+            threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
+            print ('Accept message sent to client '+str(pid))        
     
     elif data['type'] == 'accept':
         # do stuff and relay message to leader
-        # AC
+        ACCEPT_COUNT += 1       
+        if ACCEPT_COUNT >= MAJORITY:
+            data = {
+                'type': 'decide',
+                'ballot': BALLOT_NUM.toJSON()  
+            }
+            message = json.dumps(data)
+            for client in CLIENTS:
+                threading.Thread(target = sendMessage, args = (message, client,)).start()
+            print ('Decide message sent to followers')
+            ACCEPT_COUNT = 0
+    
+    elif data['type'] = 'decide':
+        chain.append(ACCEPT_VAL)
                   
 
                 
@@ -225,7 +252,7 @@ if __name__ == "__main__":
     print("Balance: $"+str(BALANCE))
     
     # Listen for client inputs
-    chain = BlockChain()
+    chain = BlockChain(BALANCE)
 
     while True:
         message = input("Enter transaction: ")
