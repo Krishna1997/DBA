@@ -1,7 +1,7 @@
 # DBA
 
-Command: python3 client.py <pid> client.txt
+Command to start server: python3 client.py <pid> client.txt
 
-Commands:
+Client requests:
 Transaction: t,<receiver_pid>,amount
 Balance: b
