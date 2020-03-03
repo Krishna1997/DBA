@@ -11,7 +11,6 @@ print("Process id: ", PID)
 
 IP = "127.0.0.1"
 BUFFER_SIZE = 1024
-NUM_CLIENTS = 3
 CLIENTS = []
 LAMPORT = 0
 BALANCE = 10
@@ -26,22 +25,14 @@ MAX_ACK_NUM = BallotNum()
 MAX_ACK_VAL = []
 isLeader = False
 transaction_log = []
-INPUT = ""
 
 PORT = 5000+PID
 clientConn = {}
-pidConfig = {}
-INTERVAL = 0     
+pidConn = {}     
 
-def sendMessage(msg, pid):
+def sendMessage(msg, conn):
     time.sleep(5)
-    try:
-        s = socket.socket()
-        s.connect((IP, pidConfig[pid]))
-        s.sendall(msg.encode('utf-8'))
-        s.close()
-    except:
-        print("Client" + str(pid) + " is down!")
+    conn.sendall(msg.encode('utf-8'))
     
 def incrementAckCount():
 	global ACK_COUNT
@@ -58,108 +49,23 @@ def incrementAcceptCount():
 	ACCEPT_COUNT += 1
 	mutex.release()
 	print ('ACCEPT_COUNT: ' + str(ACCEPT_COUNT))
- 
-def incrementInterval(cnt):
-	global INTERVAL
-	mutex = Lock()
-	mutex.acquire()
-	INTERVAL += cnt
-	mutex.release()
-	print ('Interval: ' + str(INTERVAL))
 
 def sendPrepare():
     BALLOT_NUM.num += 1
     BALLOT_NUM.pid = PID
     SEQ_NUM = chain.getLastSeqNum() + 1
     data = {
-        'pid': PID,
         'type': 'prepare',
         'ballot': BALLOT_NUM.toJSON(),
         'seq_num': SEQ_NUM
     }
     message = json.dumps(data)
-    for i in range(1, NUM_CLIENTS+1):
-        if i != PID:
-            threading.Thread(target = sendMessage, args = (message, i,)).start()
-    print ('Prepare message sent to clients')  
-    threading.Thread(target = startTimerForAck, args = (15,)).start() 
+    for client in CLIENTS:
+        threading.Thread(target = sendMessage, args = (message, client,)).start()
+    print ('Prepare message sent to clients')   
     
-def startTimerForAck(start=15):
-    global INTERVAL
-    global ACK_COUNT
-    global MAJORITY
-    
-    INTERVAL = start
-    while True:
-        time.sleep(1)
-        INTERVAL -= 1
-        print ('INTERVAL: ' + str(INTERVAL))
-        if INTERVAL == 0:
-            if ACK_COUNT >= MAJORITY:  
-                log = []          
-                if len(MAX_ACK_VAL) != 0:
-                    log = MAX_ACK_VAL[:]
-                else:
-                    for val in transaction_log:
-                        log.append(val.toJSON())
 
-                data = {
-                    'pid': PID,
-                    'type': 'accept',
-                    'ballot': BALLOT_NUM.toJSON(),
-                    'seq_num': SEQ_NUM,
-                    'value': log   
-                }
-                message = json.dumps(data)
-                for i in range(1, NUM_CLIENTS+1):
-                    if i != PID:
-                        threading.Thread(target = sendMessage, args = (message, i,)).start()
-                print ('Accept message sent to followers')
-                ACK_COUNT = 0
-                threading.Thread(target = startTimerForAccept, args = (15,)).start()
-            break
-
-
-def startTimerForAccept(start=15):
-    global INTERVAL
-    global ACCEPT_COUNT
-    global MAJORITY
-    global INPUT
-    global SEQ_NUM
-    
-    INTERVAL = start
-    while True:
-        time.sleep(1)
-        INTERVAL -= 1
-        print ('INTERVAL: ' + str(INTERVAL))
-        if INTERVAL == 0:
-            if ACCEPT_COUNT >= MAJORITY:
-                val = []
-                for aval in transaction_log:
-                    val.append(aval.toJSON())
-                data = {
-                    'pid': PID,
-                    'type': 'commit',
-                    'ballot': BALLOT_NUM.toJSON(),
-                    'seq_num': SEQ_NUM,
-                    'value': val  
-                }
-                message = json.dumps(data)
-                for i in range(1, NUM_CLIENTS+1):
-                    if i != PID:
-                        threading.Thread(target = sendMessage, args = (message, i,)).start()
-                print ('Decide message sent to followers')
-                ACCEPT_COUNT = 0
-                SEQ_NUM = chain.append(SEQ_NUM, transaction_log)
-                transaction_log.clear()
-                chain.printChain()
-                if INPUT != "":
-                    print(f"Pending transaction: {INPUT}")
-                    processInput(INPUT)
-            break
-
-
-def processMessage(data):  
+def processMessage(pid, data):  
     global BALLOT_NUM
     global ACCEPT_NUM
     global ACCEPT_VAL
@@ -167,11 +73,8 @@ def processMessage(data):
     global MAX_ACK_VAL 
     global ACK_COUNT
     global ACCEPT_COUNT 
-    global INTERVAL
-    
-    data = json.loads(data)
-    pid = data['pid']
     print ('Message from client ' + str(pid))
+    data = json.loads(data)
     if data['type'] == 'prepare':
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
@@ -180,7 +83,6 @@ def processMessage(data):
             for aval in ACCEPT_VAL:
                 val.append(aval.toJSON())
             data = {
-                'pid': PID,
                 'type': 'ack',
                 'ballot': BALLOT_NUM.toJSON(),
                 'seq_num': chain.getLastSeqNum(),
@@ -188,19 +90,40 @@ def processMessage(data):
                 'accept_val': val 
             }
             message = json.dumps(data)
-            threading.Thread(target = sendMessage, args = (message, pid,)).start()
+            threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
             print ('Ack message sent to client '+str(pid))
-         
+            
     elif data['type'] == 'ack':
         #  check for majority and send accept to followers
-        incrementInterval(5)
         incrementAckCount()
         acceptBallot = BallotNum.load(data['accept_ballot'])
         acceptVal = data['accept_val']
         if len(acceptVal) != 0 and acceptBallot.isHigher(MAX_ACK_NUM):
             MAX_ACK_NUM = acceptBallot
             MAX_ACK_VAL = acceptVal[:]
-                   
+            
+        time.sleep(5)
+        if ACK_COUNT >= MAJORITY:  
+            log = []          
+            if len(MAX_ACK_VAL) != 0:
+                log = MAX_ACK_VAL[:]
+            else:
+                for val in transaction_log:
+                    log.append(val.toJSON())
+
+            data = {
+                'type': 'accept',
+                'ballot': BALLOT_NUM.toJSON(),
+                'seq_num': SEQ_NUM,
+                'value': log   
+            }
+            message = json.dumps(data)
+            # for client in CLIENTS:
+            threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
+            print ('Accept message sent to followers')
+            ACK_COUNT = 0
+            
+         
     elif data['type'] == 'accept':
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
@@ -211,22 +134,39 @@ def processMessage(data):
                 val.append(aval.toJSON())
             ACCEPT_VAL = [ Transaction.load(val) for val in data['value'] ]
             data = {
-                'pid': PID,
                 'type': 'accepted',
                 'ballot': BALLOT_NUM.toJSON(),
                 'seq_num': chain.getLastSeqNum(),
                 'value': val
             }
             message = json.dumps(data)
-            threading.Thread(target = sendMessage, args = (message, pid,)).start()
+            threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
             print ('Accepted message sent to client '+str(pid))        
-  
+    
     elif data['type'] == 'accepted':
-        incrementInterval(5)
+        # do stuff and relay message to leader
         incrementAcceptCount()  
         for aval in data['value']:
             transaction_log.append(Transaction.load(aval)) 
-  
+        
+        time.sleep(5)
+        if ACCEPT_COUNT >= MAJORITY:
+            val = []
+            for aval in transaction_log:
+                val.append(aval.toJSON())
+            data = {
+                'type': 'commit',
+                'ballot': BALLOT_NUM.toJSON(),
+                'seq_num': SEQ_NUM,
+                'value': val  
+            }
+            message = json.dumps(data)
+            # for client in CLIENTS:
+            threading.Thread(target = sendMessage, args = (message, pidConn[pid],)).start()
+            print ('Decide message sent to followers')
+            ACCEPT_COUNT = 0
+            chain.printChain()
+    
     elif data['type'] == 'commit':
         print ('Decide message from leader')
         val = []
@@ -235,8 +175,6 @@ def processMessage(data):
         chain.append(data['seq_num'], val)
         transaction_log.clear()
         chain.printChain()
-
-
   
 def getBalance(pid):
     amount = chain.getBalance(pid)
@@ -246,7 +184,7 @@ def getBalance(pid):
     
 def processInput(data):
     dataList = data.split(',')
-    if dataList[0] == 't':
+    if dataList[0] == 'transfer':
         # Update getBalance to get balance
         receiver = int(dataList[1])
         amount = int(dataList[2])
@@ -260,10 +198,26 @@ def processInput(data):
             # Run Paxos
             sendPrepare()
             
-    elif dataList[0] == 'b':
+    elif dataList[0] == 'balance':
         if len(dataList) == 1:
             dataList.append(str(PID))
         print("Balance: $"+str(getBalance(int(dataList[1]))))
+
+
+                
+def listenToClient(pid, conn):
+    with conn:
+        while True:
+            try:
+                data = conn.recv(BUFFER_SIZE).decode('utf-8')
+                if not data:
+                    break
+                processMessage(pid, data)
+            except socket.error:
+                print ("Socket error in receiving message")
+                break
+        if conn in CLIENTS:
+            CLIENTS.remove(conn)
 
 
 def createServer(pid):
@@ -272,35 +226,45 @@ def createServer(pid):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('', PORT))         
         print("socket binded to %s" %(PORT))
-        s.listen(5)      
+        s.listen(1)      
         print("socket successfully created")
     except socket.error as err: 
         print("socket creation failed with error %s" %(err)) 
 
     while True:
-        try:
-            conn, addr = s.accept()
-            data = conn.recv(BUFFER_SIZE).decode('utf-8')
-            if not data:
-                break
-            processMessage(data)
-        except expression as identifier:
-            print ("Socket error in receiving message")
+        conn, addr = s.accept()
+        data = conn.recv(BUFFER_SIZE).decode('utf-8')
+        if not data:
+            break
+        dataList = data.split(',')
+        if dataList[0] == 'pid':
+            clientConn[conn] = int(dataList[1])
+            pidConn[int(dataList[1])] = conn
+            print('Accepted connection from client ', dataList[1])
+        CLIENTS.append(conn)
+        print("#clients connected: ", len(CLIENTS))
+        threading.Thread(target = listenToClient,args = (int(dataList[1]),conn,)).start()
+
+
+def connectToClient(pid, ip, port):
+    c_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    c_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    c_socket.connect((ip, port))
+    c_socket.sendall(("pid,"+str(PID)).encode('utf-8'))
+    CLIENTS.append(c_socket)
+    clientConn[c_socket] = pid
+    pidConn[pid] = c_socket
+    threading.Thread(target = listenToClient,args = (pid,c_socket,)).start()
    
      
 if __name__ == "__main__":
     # Reading the client configurations
     f = open(sys.argv[2], 'r')
     configList = f.readlines()
-    NUM_CLIENTS = len(configList)
-    for i in range(1, NUM_CLIENTS+1):
-        config = configList[i-1].strip().split(',')
-        if len(config) != 3:
-            print("Incorrect configuration")
-            sys.exit()
-        pidConfig[i] = int(config[1])
-        
-    config = configList[PID-1].strip().split(',')
+    config = configList[PID-1].strip('\n').split(',')
+    if len(config) != 3:
+        print("Incorrect configuration")
+        sys.exit()
     IP = config[0]
     PORT = int(config[1])
     BALANCE = int(config[2])
@@ -309,10 +273,17 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target = createServer,args = (PID,)) 
     server_thread.start() 
 
+    # Connect to existing clients
+    for i in range(1, PID):
+        clientConfig = configList[i-1].strip('\n').split(',')
+        connectToClient(i, clientConfig[0], int(clientConfig[1]))
+    print("#clients connected: ", len(CLIENTS))
     print("Balance: $"+str(BALANCE))
+    
+    # Listen for client inputs
     chain = BlockChain(BALANCE)
 
     while True:
-        INPUT = input()
-        processInput(INPUT)
+        message = input()
+        processInput(message)
 
