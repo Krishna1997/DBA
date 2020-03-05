@@ -94,7 +94,7 @@ def startTimerForAck(start=15):
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
-        if INTERVAL == 0:
+        if INTERVAL <= 0:
             if ACK_COUNT >= MAJORITY:  
                 log = []          
                 if len(MAX_ACK_VAL) != 0:
@@ -132,7 +132,7 @@ def startTimerForAccept(start=15):
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
-        if INTERVAL == 0:
+        if INTERVAL <= 0:
             if ACCEPT_COUNT >= MAJORITY:
                 val = []
                 for aval in transaction_log:
