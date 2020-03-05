@@ -40,7 +40,8 @@ FOLLOWER_FLAG_ACCEPT = False
 FOLLOWER_FLAG_COMMIT = False
 # To be changed when FOLLOWER receives new PREPARE message
 FOLLOWER_FLAG_RESET_TIMER = False
-
+# To be changed when decided to CRASH and regained conciousness
+LEADER_CRASH_FLAG = False
 
 
 def sendMessage(msg, pid):
@@ -98,9 +99,11 @@ def startTimerForAck(start=15):
     global INTERVAL
     global ACK_COUNT
     global MAJORITY
-    
+    #ADDED BY MAYURESH
+    global LEADER_CRASH_FLAG    
+
     INTERVAL = start
-    while True:
+    while LEADER_CRASH_FLAG == False: #CHANGED BY MAYURESH
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
@@ -129,16 +132,17 @@ def startTimerForAck(start=15):
                 threading.Thread(target = startTimerForAccept, args = (15,)).start()
             break
 
-
 def startTimerForAccept(start=15):
     global INTERVAL
     global ACCEPT_COUNT
     global MAJORITY
     global INPUT
-    global SEQ_NUM
-    
+    global SEQ_NUM  
+    #ADDED BY MAYURESH
+    global LEADER_CRASH_FLAG
+
     INTERVAL = start
-    while True:
+    while LEADER_CRASH_FLAG == False: #CHANGED BY MAYURESH
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
@@ -171,7 +175,7 @@ def startTimerForAccept(start=15):
 # ADDED BY MAYURESH    
 def startTimerForFollowerAccept(start=15):
     global FOLLOWER_INTERVAL
-    
+    global FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while FOLLOWER_FLAG_ACCEPT != True:
         time.sleep(1)
@@ -179,7 +183,7 @@ def startTimerForFollowerAccept(start=15):
         print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
-    if FOLLOWER_INTERVAL <= 0:
+    if FOLLOWER_INTERVAL <= 0 and FOLLOWER_FLAG_RESET_TIMER = False:
         FOLLOWER_FLAG_ACCEPT = False
         # START PAXOS
         sendPrepare()
@@ -188,7 +192,7 @@ def startTimerForFollowerAccept(start=15):
 # ADDED BY MAYURESH       
 def startTimerForCommit(start = 15):
     global FOLLOWER_INTERVAL
-    
+    global FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while FOLLOWER_FLAG_COMMIT != True:
         time.sleep(1)
@@ -196,7 +200,7 @@ def startTimerForCommit(start = 15):
         print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
-    if FOLLOWER_INTERVAL <= 0:
+    if FOLLOWER_INTERVAL <= 0 and FOLLOWER_FLAG_RESET_TIMER = False:
         FOLLOWER_FLAG_COMMIT = False
         # START PAXOS
         sendPrepare()
@@ -219,9 +223,9 @@ def processMessage(data):
     if data['type'] == 'prepare':
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
-            # WE NEED TO RESET EARLIER TIMERS HERE
-            # HOW DO WE KNOW WHAT PROCESS THREADS. ONLY INTERVAL VARIABLE IS USED TO DECIDE
-            # SO WE MAKE THIS VARIABLE HIGH SO IT NEVER 
+            #ADDED BY MAYURESH
+            # WE NEED TO RESET EARLIER TIMERS HERE SO THAT FOLLOWER DOESNT START PAXOS
+            FOLLOWER_FLAG_RESET_TIMER = True
                 
             BALLOT_NUM = ballotNum
             val = []
@@ -328,9 +332,14 @@ def processInput(data):
     # CHANGED BY MAYURESH    
     elif dataList[0] == "s": #TO CRASH the client
         # ALSO ASK FOR TIME IT WANTS TO STOP
+        LEADER_CRASH_FLAG = True
+        FOLLOWER_FLAG_ACCEPT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
+        FOLLOWER_FLAG_COMMIT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
+        FOLLOWER_FLAG_RESET_TIMER = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         time.sleep(int(input("Enter time to crash"))) #??????????????????????????
         print("Server regained conciousness")
-
+        LEADER_CRASH_FLAG = False
+        #DO NOTHING from NOW till new transaction
 
 def createServer(pid):
     try: 
