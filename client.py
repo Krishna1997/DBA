@@ -38,6 +38,10 @@ INTERVAL = 0
 FOLLOWER_FLAG_ACCEPT = False
 # To be changed when FOLLOWER receives COMMIT from LEADER
 FOLLOWER_FLAG_COMMIT = False
+# To be changed when FOLLOWER receives new PREPARE message
+FOLLOWER_FLAG_RESET_TIMER = False
+
+
 
 def sendMessage(msg, pid):
     time.sleep(5)
@@ -211,9 +215,14 @@ def processMessage(data):
     data = json.loads(data)
     pid = data['pid']
     print ('Message from client ' + str(pid))
+
     if data['type'] == 'prepare':
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
+            # WE NEED TO RESET EARLIER TIMERS HERE
+            # HOW DO WE KNOW WHAT PROCESS THREADS. ONLY INTERVAL VARIABLE IS USED TO DECIDE
+            # SO WE MAKE THIS VARIABLE HIGH SO IT NEVER 
+                
             BALLOT_NUM = ballotNum
             val = []
             for aval in ACCEPT_VAL:
@@ -229,6 +238,10 @@ def processMessage(data):
             message = json.dumps(data)
             threading.Thread(target = sendMessage, args = (message, pid,)).start()
             print ('Ack message sent to client '+str(pid))
+            #ADDED BY MAYURESH
+            print("Timer started for ACCEPT messages")
+            threading.Thread(target = startTimerForFollowerAccept, args = (15,)).start()
+            
          
     elif data['type'] == 'ack':
         #  check for majority and send accept to followers
@@ -258,7 +271,10 @@ def processMessage(data):
             }
             message = json.dumps(data)
             threading.Thread(target = sendMessage, args = (message, pid,)).start()
-            print ('Accepted message sent to client '+str(pid))        
+            print ('Accepted message sent to client '+str(pid))
+            #ADDED BY MAYURESH
+            print("Timer started for COMMIT messages")
+            threading.Thread(target = startTimerForCommit, args = (15,)).start()        
   
     elif data['type'] == 'accepted':
         incrementInterval(5)
@@ -312,7 +328,7 @@ def processInput(data):
     # CHANGED BY MAYURESH    
     elif dataList[0] == "s": #TO CRASH the client
         # ALSO ASK FOR TIME IT WANTS TO STOP
-        time.sleep(int(input("Enter time to crash"))) ??????????????????????????
+        time.sleep(int(input("Enter time to crash"))) #??????????????????????????
         print("Server regained conciousness")
 
 
