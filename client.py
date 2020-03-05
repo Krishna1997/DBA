@@ -33,6 +33,12 @@ clientConn = {}
 pidConfig = {}
 INTERVAL = 0     
 
+#ADDED BY MAYURESH
+# To be changed when FOLLOWER receives ACCEPT from LEADER
+FOLLOWER_FLAG_ACCEPT = False
+# To be changed when FOLLOWER receives COMMIT from LEADER
+FOLLOWER_FLAG_COMMIT = False
+
 def sendMessage(msg, pid):
     time.sleep(5)
     try:
@@ -158,6 +164,39 @@ def startTimerForAccept(start=15):
                     processInput(INPUT)
             break
 
+# ADDED BY MAYURESH    
+def startTimerForFollowerAccept(start=15):
+    global FOLLOWER_INTERVAL
+    
+    FOLLOWER_INTERVAL = start
+    while FOLLOWER_FLAG_ACCEPT != True:
+        time.sleep(1)
+        FOLLOWER_INTERVAL -= 1
+        print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
+        if FOLLOWER_INTERVAL <= 0:
+            break
+    if FOLLOWER_INTERVAL <= 0:
+        FOLLOWER_FLAG_ACCEPT = False
+        # START PAXOS
+        sendPrepare()
+        # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
+
+# ADDED BY MAYURESH       
+def startTimerForCommit(start = 15):
+    global FOLLOWER_INTERVAL
+    
+    FOLLOWER_INTERVAL = start
+    while FOLLOWER_FLAG_COMMIT != True:
+        time.sleep(1)
+        FOLLOWER_INTERVAL -= 1
+        print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
+        if FOLLOWER_INTERVAL <= 0:
+            break
+    if FOLLOWER_INTERVAL <= 0:
+        FOLLOWER_FLAG_COMMIT = False
+        # START PAXOS
+        sendPrepare()
+        # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
 
 def processMessage(data):  
     global BALLOT_NUM
@@ -229,6 +268,11 @@ def processMessage(data):
   
     elif data['type'] == 'commit':
         print ('Decide message from leader')
+        # Follower and Leader must check what SEQUENCE NUMBERS ARE MISSING FROM THEIR LOGS
+        # FOLLOWER has LESSER SEQUENCE NUMBER THAN LEADER [can happen!]
+        # LEADER has LESSER SEQUENCE NUMBER THAN FOLLOWER [can happen!]
+        # WHOEVER HAS LESSER SENDS THE SEQUENCE NUMBERS AND REQUESTS FOR THE BLOCK
+        # SO ONE MORE PROCESS MESSAGE TYPE
         val = []
         for aval in data['value']:
             val.append(Transaction.load(aval))
@@ -264,6 +308,12 @@ def processInput(data):
         if len(dataList) == 1:
             dataList.append(str(PID))
         print("Balance: $"+str(getBalance(int(dataList[1]))))
+
+    # CHANGED BY MAYURESH    
+    elif dataList[0] == "s": #TO CRASH the client
+        # ALSO ASK FOR TIME IT WANTS TO STOP
+        time.sleep(int(input("Enter time to crash"))) ??????????????????????????
+        print("Server regained conciousness")
 
 
 def createServer(pid):
