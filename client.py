@@ -45,7 +45,7 @@ LEADER_CRASH_FLAG = False
 
 
 def sendMessage(msg, pid):
-    time.sleep(5)
+    time.sleep(2)
     try:
         s = socket.socket()
         s.connect((IP, pidConfig[pid]))
@@ -107,6 +107,8 @@ def startTimerForAck(start=15):
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
+        if ACK_COUNT == NUM_CLIENTS - 1:
+            INTERVAL = 0
         if INTERVAL <= 0:
             if ACK_COUNT >= MAJORITY:  
                 log = []          
@@ -146,6 +148,8 @@ def startTimerForAccept(start=15):
         time.sleep(1)
         INTERVAL -= 1
         print ('INTERVAL: ' + str(INTERVAL))
+        if ACCEPT_COUNT == NUM_CLIENTS - 1:
+            INTERVAL = 0
         if INTERVAL <= 0:
             if ACCEPT_COUNT >= MAJORITY:
                 val = []
@@ -175,34 +179,43 @@ def startTimerForAccept(start=15):
 # ADDED BY MAYURESH    
 def startTimerForFollowerAccept(start=15):
     global FOLLOWER_INTERVAL
-    global FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
+    global FOLLOWER_FLAG_RESET_TIMER 
+    global FOLLOWER_FLAG_ACCEPT
+    FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while FOLLOWER_FLAG_ACCEPT != True:
         time.sleep(1)
         FOLLOWER_INTERVAL -= 1
-        print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
+        print ('FOLLOWER_INTERVAL in accept: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
-    if FOLLOWER_INTERVAL <= 0 and FOLLOWER_FLAG_RESET_TIMER = False:
+    if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_ACCEPT) and (not FOLLOWER_FLAG_RESET_TIMER)):
         FOLLOWER_FLAG_ACCEPT = False
         # START PAXOS
         sendPrepare()
+        
         # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
 
 # ADDED BY MAYURESH       
 def startTimerForCommit(start = 15):
     global FOLLOWER_INTERVAL
-    global FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
+    global FOLLOWER_FLAG_RESET_TIMER 
+    global FOLLOWER_FLAG_COMMIT
+    FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
-    while FOLLOWER_FLAG_COMMIT != True:
+    while not FOLLOWER_FLAG_COMMIT:
+        print(f"follower flag: {FOLLOWER_FLAG_COMMIT}")
         time.sleep(1)
         FOLLOWER_INTERVAL -= 1
-        print ('FOLLOWER_INTERVAL: ' + str(FOLLOWER_INTERVAL))
+        print ('FOLLOWER_INTERVAL in commit: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
-    if FOLLOWER_INTERVAL <= 0 and FOLLOWER_FLAG_RESET_TIMER = False:
+    print(f"follower flag, timer: {FOLLOWER_FLAG_COMMIT} {FOLLOWER_FLAG_RESET_TIMER} in COMMIT")
+    if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_COMMIT) and (not FOLLOWER_FLAG_RESET_TIMER)):
         FOLLOWER_FLAG_COMMIT = False
+        
         # START PAXOS
+        
         sendPrepare()
         # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
 
@@ -215,6 +228,9 @@ def processMessage(data):
     global ACK_COUNT
     global ACCEPT_COUNT 
     global INTERVAL
+    global FOLLOWER_FLAG_COMMIT
+    global FOLLOWER_FLAG_ACCEPT
+    global FOLLOWER_FLAG_RESET_TIMER
     
     data = json.loads(data)
     pid = data['pid']
@@ -226,6 +242,8 @@ def processMessage(data):
             #ADDED BY MAYURESH
             # WE NEED TO RESET EARLIER TIMERS HERE SO THAT FOLLOWER DOESNT START PAXOS
             FOLLOWER_FLAG_RESET_TIMER = True
+            FOLLOWER_FLAG_ACCEPT = False
+            FOLLOWER_FLAG_COMMIT = False
                 
             BALLOT_NUM = ballotNum
             val = []
@@ -249,7 +267,7 @@ def processMessage(data):
          
     elif data['type'] == 'ack':
         #  check for majority and send accept to followers
-        incrementInterval(5)
+        # incrementInterval(5)
         incrementAckCount()
         acceptBallot = BallotNum.load(data['accept_ballot'])
         acceptVal = data['accept_val']
@@ -260,6 +278,7 @@ def processMessage(data):
     elif data['type'] == 'accept':
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
+            FOLLOWER_FLAG_ACCEPT = True
             BALLOT_NUM = ballotNum
             ACCEPT_NUM = ballotNum
             val = []
@@ -281,13 +300,18 @@ def processMessage(data):
             threading.Thread(target = startTimerForCommit, args = (15,)).start()        
   
     elif data['type'] == 'accepted':
-        incrementInterval(5)
+        # incrementInterval(5)
         incrementAcceptCount()  
         for aval in data['value']:
             transaction_log.append(Transaction.load(aval)) 
   
     elif data['type'] == 'commit':
         print ('Decide message from leader')
+        mutex = Lock()
+        mutex.acquire()
+        FOLLOWER_FLAG_COMMIT = True
+        mutex.release()
+        
         # Follower and Leader must check what SEQUENCE NUMBERS ARE MISSING FROM THEIR LOGS
         # FOLLOWER has LESSER SEQUENCE NUMBER THAN LEADER [can happen!]
         # LEADER has LESSER SEQUENCE NUMBER THAN FOLLOWER [can happen!]
