@@ -388,14 +388,17 @@ def processInput(data):
         receiver = int(dataList[1])
         amount = int(dataList[2])
         amountBefore = getBalance(PID)
+        print(f"{PID} is {receiver}")
         if amountBefore >= amount and PID != receiver:
             transaction_log.append(Transaction(PID, receiver, amount))
             print("SUCCESS")
             print("Balance before: $"+str(amountBefore))
             print("Balance after: $"+str(amountBefore-amount))
-        else:
+        elif PID != receiver:
             # Run Paxos
             sendPrepare()
+        else:
+            print("You cannot send transaction to yourself!")
             
     elif dataList[0] == 'b' :
         if len(dataList) == 1:
