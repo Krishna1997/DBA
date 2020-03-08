@@ -31,7 +31,8 @@ INPUT = ""
 PORT = 5000+PID
 clientConn = {}
 pidConfig = {}
-INTERVAL = 0     
+INTERVAL = 0   
+CLIENT_SEQ_NUM = {}  
 
 #ADDED BY MAYURESH
 # To be changed when FOLLOWER receives ACCEPT from LEADER
@@ -79,6 +80,10 @@ def incrementInterval(cnt):
 	print ('Interval: ' + str(INTERVAL))
 
 def sendPrepare():
+    global SEQ_NUM
+    global BALLOT_NUM
+    global NUM_CLIENTS
+    
     BALLOT_NUM.num += 1
     BALLOT_NUM.pid = PID
     SEQ_NUM = chain.getLastSeqNum() + 1
@@ -93,12 +98,13 @@ def sendPrepare():
         if i != PID:
             threading.Thread(target = sendMessage, args = (message, i,)).start()
     print ('Prepare message sent to clients')  
-    threading.Thread(target = startTimerForAck, args = (15,)).start() 
+    threading.Thread(target = startTimerForAck, args = (10,)).start() 
     
 def startTimerForAck(start=15):
     global INTERVAL
     global ACK_COUNT
     global MAJORITY
+    global SEQ_NUM
     #ADDED BY MAYURESH
     global LEADER_CRASH_FLAG    
 
@@ -131,7 +137,7 @@ def startTimerForAck(start=15):
                         threading.Thread(target = sendMessage, args = (message, i,)).start()
                 print ('Accept message sent to followers')
                 ACK_COUNT = 0
-                threading.Thread(target = startTimerForAccept, args = (15,)).start()
+                threading.Thread(target = startTimerForAccept, args = (10,)).start()
             break
 
 def startTimerForAccept(start=15):
@@ -139,7 +145,8 @@ def startTimerForAccept(start=15):
     global ACCEPT_COUNT
     global MAJORITY
     global INPUT
-    global SEQ_NUM  
+    global SEQ_NUM
+    global CLIENT_SEQ_NUM
     #ADDED BY MAYURESH
     global LEADER_CRASH_FLAG
 
@@ -162,10 +169,15 @@ def startTimerForAccept(start=15):
                     'seq_num': SEQ_NUM,
                     'value': val  
                 }
-                message = json.dumps(data)
+                
                 for i in range(1, NUM_CLIENTS+1):
                     if i != PID:
+                        data['prev_blocks'] = None
+                        if CLIENT_SEQ_NUM.get(i) is not None and CLIENT_SEQ_NUM[i]+1 < SEQ_NUM:
+                            data['prev_blocks'] = chain.getBlocks(CLIENT_SEQ_NUM[i])                           
+                        message = json.dumps(data)    
                         threading.Thread(target = sendMessage, args = (message, i,)).start()
+                        
                 print ('Decide message sent to followers')
                 ACCEPT_COUNT = 0
                 SEQ_NUM = chain.append(SEQ_NUM, transaction_log)
@@ -173,8 +185,7 @@ def startTimerForAccept(start=15):
                 chain.printChain()
                 if INPUT != "":
                     print(f"Pending transaction: {INPUT}")
-                    # JUST CHECK BALANCE, IF ENOUGH BALANCE THEN ADD TRANSACTION ELSE DECLINE
-                    # processInput(INPUT)
+                    handleTransaction(INPUT)
             break
 
 # ADDED BY MAYURESH    
@@ -187,7 +198,7 @@ def startTimerForFollowerAccept(start=15):
     while FOLLOWER_FLAG_ACCEPT != True:
         time.sleep(1)
         FOLLOWER_INTERVAL -= 1
-        print ('FOLLOWER_INTERVAL in accept: ' + str(FOLLOWER_INTERVAL))
+        # print ('FOLLOWER_INTERVAL in accept: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
     if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_ACCEPT) and (not FOLLOWER_FLAG_RESET_TIMER)):
@@ -205,13 +216,13 @@ def startTimerForCommit(start = 15):
     FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while not FOLLOWER_FLAG_COMMIT:
-        print(f"follower flag: {FOLLOWER_FLAG_COMMIT}")
+        # print(f"follower flag: {FOLLOWER_FLAG_COMMIT}")
         time.sleep(1)
         FOLLOWER_INTERVAL -= 1
-        print ('FOLLOWER_INTERVAL in commit: ' + str(FOLLOWER_INTERVAL))
+        # print ('FOLLOWER_INTERVAL in commit: ' + str(FOLLOWER_INTERVAL))
         if FOLLOWER_INTERVAL <= 0:
             break
-    print(f"follower flag, timer: {FOLLOWER_FLAG_COMMIT} {FOLLOWER_FLAG_RESET_TIMER} in COMMIT")
+    # print(f"follower flag, timer: {FOLLOWER_FLAG_COMMIT} {FOLLOWER_FLAG_RESET_TIMER} in COMMIT")
     if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_COMMIT) and (not FOLLOWER_FLAG_RESET_TIMER)):
         FOLLOWER_FLAG_COMMIT = False
         # START PAXOS
@@ -230,6 +241,8 @@ def processMessage(data):
     global FOLLOWER_FLAG_COMMIT
     global FOLLOWER_FLAG_ACCEPT
     global FOLLOWER_FLAG_RESET_TIMER
+    global CLIENT_SEQ_NUM
+    global SEQ_NUM
     
     data = json.loads(data)
     pid = data['pid']
@@ -302,9 +315,9 @@ def processMessage(data):
         # incrementInterval(5)
         incrementAcceptCount()
         #CHANGED BY MAYURESH
-        new_value = []
-        client_seq_number = data['seq_num'] #ACCESS CLIENT SEQUENCE NUMBER FROM MESSAGE ACCEPTED
-        if client_seq_number < SEQ_NUM: #LEADER MUST ADD PREVIOUS LOG ENTRIES
+        CLIENT_SEQ_NUM[data['pid']] = data['seq_num']
+        #ACCESS CLIENT SEQUENCE NUMBER FROM MESSAGE ACCEPTED
+        #LEADER MUST ADD PREVIOUS LOG ENTRIES
             #APPEND GENISIS BLOCKS WHICH ARE NOT AVAILABLE IN FOLLWER FROM LEADER???????????????????????????????
             #send request to follower to send its unmatched blocks??????????????????????????????????????????????
          
@@ -319,12 +332,18 @@ def processMessage(data):
         # LEADER has LESSER SEQUENCE NUMBER THAN FOLLOWER [can happen!]
         # WHOEVER HAS LESSER SENDS THE SEQUENCE NUMBERS AND REQUESTS FOR THE BLOCK
         # SO ONE MORE PROCESS MESSAGE TYPE
-        val = []
+        
         # ???????? IT HAS TO CHECK THAT GIVEN DATA IS A BLOCK THEN APPEND AS A BLOCK ELSE COLLECT VALUES
-        # IT IS RECOMMENDED THAT LEADER MUST ALWAYS SEND ONLY BLOCKS
-        for aval in data['value']:
-            val.append(Transaction.load(aval))
-        chain.append(data['seq_num'], val)
+        # IT IS RECOMMENDED THAT LEADER MUST ALWAYS SEND ONLY BLOCK
+            
+        if data['prev_blocks'] is not None:
+            blocks = data['prev_blocks']
+            for i in range(len(blocks)):
+                a = [ Transaction.load(x) for x in blocks[i] ]
+                SEQ_NUM = chain.append(SEQ_NUM+1, a)
+                
+        val = [ Transaction.load(x) for x in data['value'] ] 
+        SEQ_NUM = chain.append(SEQ_NUM+1, val)
         transaction_log.clear()
         chain.printChain()
   
@@ -333,6 +352,20 @@ def getBalance(pid):
     for log in transaction_log:
         amount -= log.amount
     return amount                  
+
+def handleTransaction(data):
+    dataList = data.split(',')
+    if dataList[0] == 't':
+        receiver = int(dataList[1])
+        amount = int(dataList[2])
+        amountBefore = getBalance(PID)
+        if amountBefore >= amount and PID != receiver:
+            transaction_log.append(Transaction(PID, receiver, amount))
+            print("SUCCESS")
+            print("Balance before: $"+str(amountBefore))
+            print("Balance after: $"+str(amountBefore-amount))
+        else:
+            print("INCORRECT") 
     
 def processInput(data):
     dataList = data.split(',')

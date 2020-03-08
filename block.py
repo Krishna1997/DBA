@@ -58,6 +58,12 @@ class Node(object):
         self.data = data[:]
         self.next_node = next_node
         
+    def getBlock(self):
+        a = []
+        for t in self.data:
+            a.append(t.toJSON())
+        return a
+        
     def printNode(self):
         a = []
         for v in self.data:
@@ -76,12 +82,18 @@ class BlockChain(object):
     def append(self, seq_num, data):
         newNode = Node(1, data)
         if self.head is None:
-            self.head = newNode
-            self.tail = newNode
+            if seq_num == 1:
+                self.head = newNode
+                self.tail = newNode
+            else:
+                print("INCORRECT SEQUENCE NUMBER HEAD NONE")
         else:
-            newNode.seq_num = self.tail.seq_num + 1
-            self.tail.next_node = newNode
-            self.tail = newNode
+            if self.tail.seq_num+1 == seq_num:
+                newNode.seq_num = self.tail.seq_num + 1
+                self.tail.next_node = newNode
+                self.tail = newNode
+            else:
+                print("INCORRECT SEQUENCE NUMBER")
         return self.tail.seq_num
 
     def getBalance(self, user):
@@ -100,6 +112,17 @@ class BlockChain(object):
         if self.tail is None:
             return 0
         return self.tail.seq_num
+    
+    def getBlocks(self, n):
+        node = self.head
+        while n != 0:
+            node = node.next_node
+            n -= 1
+        blocks = []
+        while node is not None:
+            blocks.append(node.getBlock())
+            node = node.next_node
+        return blocks
 
     def toList(self):
         chain = []
