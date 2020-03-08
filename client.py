@@ -173,7 +173,8 @@ def startTimerForAccept(start=15):
                 chain.printChain()
                 if INPUT != "":
                     print(f"Pending transaction: {INPUT}")
-                    processInput(INPUT)
+                    # JUST CHECK BALANCE, IF ENOUGH BALANCE THEN ADD TRANSACTION ELSE DECLINE
+                    # processInput(INPUT)
             break
 
 # ADDED BY MAYURESH    
@@ -213,9 +214,7 @@ def startTimerForCommit(start = 15):
     print(f"follower flag, timer: {FOLLOWER_FLAG_COMMIT} {FOLLOWER_FLAG_RESET_TIMER} in COMMIT")
     if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_COMMIT) and (not FOLLOWER_FLAG_RESET_TIMER)):
         FOLLOWER_FLAG_COMMIT = False
-        
         # START PAXOS
-        
         sendPrepare()
         # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
 
@@ -238,7 +237,7 @@ def processMessage(data):
 
     if data['type'] == 'prepare':
         ballotNum = BallotNum.load(data['ballot'])
-        if ballotNum.isHigher(BALLOT_NUM):
+        if ballotNum.isHigher(BALLOT_NUM) and SEQ_NUM < data['seq_num']: #DOESNT ALLOW USER WITH LOWER SEQNUM TO BECOME LEADER
             #ADDED BY MAYURESH
             # WE NEED TO RESET EARLIER TIMERS HERE SO THAT FOLLOWER DOESNT START PAXOS
             FOLLOWER_FLAG_RESET_TIMER = True
@@ -301,30 +300,33 @@ def processMessage(data):
   
     elif data['type'] == 'accepted':
         # incrementInterval(5)
-        incrementAcceptCount()  
+        incrementAcceptCount()
+        #CHANGED BY MAYURESH
+        new_value = []
+        client_seq_number = data['seq_num'] #ACCESS CLIENT SEQUENCE NUMBER FROM MESSAGE ACCEPTED
+        if client_seq_number < SEQ_NUM: #LEADER MUST ADD PREVIOUS LOG ENTRIES
+            #APPEND GENISIS BLOCKS WHICH ARE NOT AVAILABLE IN FOLLWER FROM LEADER???????????????????????????????
+            #send request to follower to send its unmatched blocks??????????????????????????????????????????????
+         
         for aval in data['value']:
-            transaction_log.append(Transaction.load(aval)) 
+            transaction_log.append(Transaction.load(aval)) # This transaction log has to be checked before adding 
   
     elif data['type'] == 'commit':
         print ('Decide message from leader')
-        mutex = Lock()
-        mutex.acquire()
         FOLLOWER_FLAG_COMMIT = True
-        mutex.release()
-        
         # Follower and Leader must check what SEQUENCE NUMBERS ARE MISSING FROM THEIR LOGS
         # FOLLOWER has LESSER SEQUENCE NUMBER THAN LEADER [can happen!]
         # LEADER has LESSER SEQUENCE NUMBER THAN FOLLOWER [can happen!]
         # WHOEVER HAS LESSER SENDS THE SEQUENCE NUMBERS AND REQUESTS FOR THE BLOCK
         # SO ONE MORE PROCESS MESSAGE TYPE
         val = []
+        # ???????? IT HAS TO CHECK THAT GIVEN DATA IS A BLOCK THEN APPEND AS A BLOCK ELSE COLLECT VALUES
+        # IT IS RECOMMENDED THAT LEADER MUST ALWAYS SEND ONLY BLOCKS
         for aval in data['value']:
             val.append(Transaction.load(aval))
         chain.append(data['seq_num'], val)
         transaction_log.clear()
         chain.printChain()
-
-
   
 def getBalance(pid):
     amount = chain.getBalance(pid)
