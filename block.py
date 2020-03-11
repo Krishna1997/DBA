@@ -80,20 +80,21 @@ class BlockChain(object):
         return self.head
         
     def append(self, seq_num, data):
-        newNode = Node(1, data)
-        if self.head is None:
-            if seq_num == 1:
-                self.head = newNode
-                self.tail = newNode
+        if len(data) >= 0:
+            newNode = Node(1, data)
+            if self.head is None:
+                if seq_num == 1:
+                    self.head = newNode
+                    self.tail = newNode
+                else:
+                    print("INCORRECT SEQUENCE NUMBER HEAD NONE")
             else:
-                print("INCORRECT SEQUENCE NUMBER HEAD NONE")
-        else:
-            if self.tail.seq_num+1 == seq_num:
-                newNode.seq_num = self.tail.seq_num + 1
-                self.tail.next_node = newNode
-                self.tail = newNode
-            else:
-                print("INCORRECT SEQUENCE NUMBER")
+                if self.tail.seq_num+1 == seq_num:
+                    newNode.seq_num = self.tail.seq_num + 1
+                    self.tail.next_node = newNode
+                    self.tail = newNode
+                else:
+                    print("INCORRECT SEQUENCE NUMBER")
         return self.tail.seq_num
 
     def getBalance(self, user):

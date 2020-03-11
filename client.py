@@ -141,6 +141,8 @@ def startTimerForAck(start=15):
                 print ('Accept message sent to followers')
                 ACK_COUNT = 0
                 threading.Thread(target = startTimerForAccept, args = (10,)).start()
+            else:
+                SEQ_NUM = chain.getLastSeqNum()
             break
 
 def startTimerForAccept(start=15):
@@ -189,6 +191,8 @@ def startTimerForAccept(start=15):
                 if INPUT != "":
                     print(f"Pending transaction: {INPUT}")
                     handleTransaction(INPUT)
+            else:
+                SEQ_NUM = chain.getLastSeqNum()
             break
 
 # ADDED BY MAYURESH    
