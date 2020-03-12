@@ -47,6 +47,14 @@ CRASH_FLAG = False
 PREPARE_RECEIVED_FLAG = False
 ACCEPT_RECEIVED_FLAG = False
 
+def printLog():
+    global transaction_log
+    print("########################################")
+    print("Transaction log is: ",end=" ")
+    for x in transaction_log:
+        print(f"{x.toTuple()}, ",end=" ")
+    print()
+    print("########################################")
 
 def sendMessage(msg, pid):
     time.sleep(2)
@@ -382,7 +390,7 @@ def handleTransaction(data):
             transaction_log.append(Transaction(PID, receiver, amount))
             print("SUCCESS")
             print("Balance before: $"+str(amountBefore))
-            print("Balance after: $"+str(amountBefore-amount))
+            print("Balance after: $"+str(amountBefore - amount))
         else:
             print("INCORRECT") 
     
@@ -410,6 +418,14 @@ def processInput(data):
         if len(dataList) == 1:
             dataList.append(str(PID))
         print("Balance: $"+str(getBalance(int(dataList[1]))))
+
+    elif dataList[0] == 'tlog' :
+        printLog()
+    
+    elif dataList[0] == 'blog' :
+        print("Block Chain is:")
+        chain.printChain()
+        print("###########################################")
 
     # CHANGED BY MAYURESH    
     elif dataList[0] == "s" : #TO CRASH the client
@@ -467,8 +483,11 @@ if __name__ == "__main__":
     server_thread.start() 
 
     print("Balance: $"+str(BALANCE))
+    print("######################################################")
+    print("TYPES OF MESSAGES TO INPUT:")
     chain = BlockChain(BALANCE)
-
+    print("Balance: b\nCrash: s\nBlockchain Log: blog\nTransaction Log: tlog\nTransaction: t,pid_to,amount")
+    print("######################################################")
     while True:
         INPUT = input()
         processInput(INPUT)
