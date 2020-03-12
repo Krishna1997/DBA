@@ -80,7 +80,7 @@ class BlockChain(object):
         return self.head
         
     def append(self, seq_num, data):
-        if len(data) >= 0:
+        if len(data) > 0:
             newNode = Node(1, data)
             if self.head is None:
                 if seq_num == 1:
