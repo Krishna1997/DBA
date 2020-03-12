@@ -89,6 +89,7 @@ def sendPrepare():
     
     BALLOT_NUM.num += 1
     BALLOT_NUM.pid = PID
+    print(f"Ballot num: {BALLOT_NUM.num}")
     SEQ_NUM = chain.getLastSeqNum() + 1
     data = {
         'pid': PID,
@@ -302,6 +303,7 @@ def processMessage(data):
                    
     elif data['type'] == 'accept' and PREPARE_RECEIVED_FLAG and (not CRASH_FLAG):
         ACCEPT_RECEIVED_FLAG = True
+        PREPARE_RECEIVED_FLAG = False
         print("ACCEPT Message Received")
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
@@ -344,6 +346,7 @@ def processMessage(data):
         print("COMMIT Message Received")
         print ('Decide message from leader')
         FOLLOWER_FLAG_COMMIT = True
+        ACCEPT_RECEIVED_FLAG = False
         # Follower and Leader must check what SEQUENCE NUMBERS ARE MISSING FROM THEIR LOGS
         # FOLLOWER has LESSER SEQUENCE NUMBER THAN LEADER [can happen!]
         # LEADER has LESSER SEQUENCE NUMBER THAN FOLLOWER [can happen!]
