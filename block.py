@@ -95,6 +95,8 @@ class BlockChain(object):
                     self.tail = newNode
                 else:
                     print("INCORRECT SEQUENCE NUMBER")
+        if self.tail is None:
+            return 0
         return self.tail.seq_num
 
     def getBalance(self, user):
