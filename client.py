@@ -260,11 +260,10 @@ def processMessage(data):
     print(f"Sequence Number is {SEQ_NUM}")
 
     if data['type'] == 'prepare' and (not CRASH_FLAG):
-        PREPARE_RECEIVED_FLAG = True 
         print("Prepare Message Received")
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM) and SEQ_NUM < data['seq_num']: #DOESNT ALLOW USER WITH LOWER SEQNUM TO BECOME LEADER
-            #ADDED BY MAYURESH
+            PREPARE_RECEIVED_FLAG = True 
             # WE NEED TO RESET EARLIER TIMERS HERE SO THAT FOLLOWER DOESNT START PAXOS
             FOLLOWER_FLAG_RESET_TIMER = True
             FOLLOWER_FLAG_ACCEPT = False
@@ -302,11 +301,11 @@ def processMessage(data):
             MAX_ACK_VAL = acceptVal[:]
                    
     elif data['type'] == 'accept' and PREPARE_RECEIVED_FLAG and (not CRASH_FLAG):
-        ACCEPT_RECEIVED_FLAG = True
-        PREPARE_RECEIVED_FLAG = False
         print("ACCEPT Message Received")
         ballotNum = BallotNum.load(data['ballot'])
         if ballotNum.isHigher(BALLOT_NUM):
+            PREPARE_RECEIVED_FLAG = False
+            ACCEPT_RECEIVED_FLAG = True
             FOLLOWER_FLAG_ACCEPT = True
             BALLOT_NUM = ballotNum
             ACCEPT_NUM = ballotNum
