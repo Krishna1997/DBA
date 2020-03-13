@@ -45,11 +45,14 @@ class BallotNum:
     
     def isHigher(self, ballotNum):
         high = False
-        if self.num >= ballotNum.num:
+        if self.num > ballotNum.num:
             high = True
         elif self.num == ballotNum.num and self.pid > ballotNum.pid:
             high = True
         return high
+    
+    def isEqual(self, ballotNum):
+        return self.num == ballotNum.num and self.pid == ballotNum.pid
 
 
 class Node(object):

@@ -17,8 +17,9 @@ LAMPORT = 0
 BALANCE = 10
 MAJORITY = 1
 SEQ_NUM = 0
-BALLOT_NUM = BallotNum()
+BALLOT_NUM = BallotNum(0,PID)
 ACCEPT_NUM = BallotNum()
+ACKED_BALLOT = BallotNum()
 ACCEPT_VAL = []
 ACK_COUNT = 0
 ACCEPT_COUNT = 0
@@ -31,7 +32,7 @@ INPUT = ""
 PORT = 5000+PID
 clientConn = {}
 pidConfig = {}
-INTERVAL = 0   
+# INTERVAL = 0   
 CLIENT_SEQ_NUM = {}  
 
 #ADDED BY MAYURESH
@@ -93,11 +94,16 @@ def incrementInterval(cnt):
 def sendPrepare():
     global SEQ_NUM
     global BALLOT_NUM
+    global ACKED_BALLOT
     global NUM_CLIENTS
+    global isLeader
     
     BALLOT_NUM.num += 1
     BALLOT_NUM.pid = PID
-    print(f"Ballot num: {BALLOT_NUM.num}")
+    ACKED_BALLOT.num = BALLOT_NUM.num
+    ACKED_BALLOT.pid = BALLOT_NUM.pid
+    isLeader = True
+    # print(f"Ballot num: {BALLOT_NUM.num}")
     SEQ_NUM = chain.getLastSeqNum() + 1
     data = {
         'pid': PID,
@@ -113,12 +119,13 @@ def sendPrepare():
     threading.Thread(target = startTimerForAck, args = (10,)).start() 
     
 def startTimerForAck(start=15):
-    global INTERVAL
+    # global INTERVAL
     global ACK_COUNT
     global MAJORITY
     global SEQ_NUM
     #ADDED BY MAYURESH
-    global CRASH_FLAG    
+    global CRASH_FLAG   
+    global isLeader 
 
     INTERVAL = start
     while CRASH_FLAG == False and not CRASH_FLAG: #CHANGED BY MAYURESH
@@ -128,7 +135,7 @@ def startTimerForAck(start=15):
         if ACK_COUNT == NUM_CLIENTS - 1:
             INTERVAL = 0
         if INTERVAL <= 0:
-            if ACK_COUNT >= MAJORITY:  
+            if ACK_COUNT >= MAJORITY and isLeader:  
                 log = []          
                 if len(MAX_ACK_VAL) != 0:
                     log = MAX_ACK_VAL[:]
@@ -152,10 +159,14 @@ def startTimerForAck(start=15):
                 threading.Thread(target = startTimerForAccept, args = (10,)).start()
             else:
                 SEQ_NUM = chain.getLastSeqNum()
+                print("Paxos Failed!!!")
+                # if INPUT != "":
+                #     print(f"Pending transaction: {INPUT}")
+                #     handleTransaction(INPUT)
             break
 
 def startTimerForAccept(start=15):
-    global INTERVAL
+    # global INTERVAL
     global ACCEPT_COUNT
     global MAJORITY
     global INPUT
@@ -163,6 +174,7 @@ def startTimerForAccept(start=15):
     global CLIENT_SEQ_NUM
     #ADDED BY MAYURESH
     global CRASH_FLAG
+    global isLeader
 
     INTERVAL = start
     while CRASH_FLAG == False and not CRASH_FLAG: #CHANGED BY MAYURESH
@@ -172,7 +184,7 @@ def startTimerForAccept(start=15):
         if ACCEPT_COUNT == NUM_CLIENTS - 1:
             INTERVAL = 0
         if INTERVAL <= 0:
-            if ACCEPT_COUNT >= MAJORITY:
+            if ACCEPT_COUNT >= MAJORITY and isLeader:
                 val = []
                 for aval in transaction_log:
                     val.append(aval.toJSON())
@@ -200,35 +212,43 @@ def startTimerForAccept(start=15):
                 if INPUT != "":
                     print(f"Pending transaction: {INPUT}")
                     handleTransaction(INPUT)
+                    INPUT = ""
             else:
                 SEQ_NUM = chain.getLastSeqNum()
+                print("Paxos Failed!!!")
+                # if INPUT != "":
+                #     print(f"Pending transaction: {INPUT}")
+                #     handleTransaction(INPUT)
             break
 
 # ADDED BY MAYURESH    
-def startTimerForFollowerAccept(start=15):
-    global FOLLOWER_INTERVAL
+def startTimerForFollowerAccept(start, ballotNum, pid):
+    # global FOLLOWER_INTERVAL
     global FOLLOWER_FLAG_RESET_TIMER 
     global FOLLOWER_FLAG_ACCEPT
+    global BALLOT_NUM
     FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while FOLLOWER_FLAG_ACCEPT != True and not CRASH_FLAG:
         time.sleep(1)
         FOLLOWER_INTERVAL -= 1
-        # print ('FOLLOWER_INTERVAL in accept: ' + str(FOLLOWER_INTERVAL))
+        print (f'Follower-Interval in accept of {pid}: {FOLLOWER_INTERVAL}')
         if FOLLOWER_INTERVAL <= 0:
             break
-    if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_ACCEPT) and (not FOLLOWER_FLAG_RESET_TIMER)) and not CRASH_FLAG:
+    if FOLLOWER_INTERVAL <= 0 and BALLOT_NUM.num == ballotNum.num and ((not FOLLOWER_FLAG_ACCEPT) and (not FOLLOWER_FLAG_RESET_TIMER)) and not CRASH_FLAG:
         FOLLOWER_FLAG_ACCEPT = False
         # START PAXOS
+        print(f"Paxos started due to accept timer lapse of {pid}")
         sendPrepare()
         
         # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
 
 # ADDED BY MAYURESH       
-def startTimerForCommit(start = 15):
-    global FOLLOWER_INTERVAL
+def startTimerForCommit(start, ballotNum, pid):
+    # global FOLLOWER_INTERVAL
     global FOLLOWER_FLAG_RESET_TIMER 
     global FOLLOWER_FLAG_COMMIT
+    global BALLOT_NUM
     FOLLOWER_FLAG_RESET_TIMER = False #If new PREPARE message is accepted then it doesnt start paxos
     FOLLOWER_INTERVAL = start
     while not FOLLOWER_FLAG_COMMIT and not CRASH_FLAG:
@@ -239,11 +259,14 @@ def startTimerForCommit(start = 15):
         if FOLLOWER_INTERVAL <= 0:
             break
     # print(f"follower flag, timer: {FOLLOWER_FLAG_COMMIT} {FOLLOWER_FLAG_RESET_TIMER} in COMMIT")
-    if FOLLOWER_INTERVAL <= 0 and ((not FOLLOWER_FLAG_COMMIT) and (not FOLLOWER_FLAG_RESET_TIMER)) and not CRASH_FLAG:
+    print(f"My ballot, started ballot: {BALLOT_NUM.num}, {ballotNum.num}")
+    if FOLLOWER_INTERVAL <= 0 and BALLOT_NUM.num == ballotNum.num and ((not FOLLOWER_FLAG_COMMIT) and (not FOLLOWER_FLAG_RESET_TIMER)) and not CRASH_FLAG:
         FOLLOWER_FLAG_COMMIT = False
         # START PAXOS
+        print(f"Paxos started due to commit timer lapse of {pid}")
         sendPrepare()
         # RESET ALL GLOBAL VARIABLES   ???????????????????????????????????????
+
 
 def processMessage(data):  
     global BALLOT_NUM
@@ -262,22 +285,30 @@ def processMessage(data):
     global CRASH_FLAG
     global PREPARE_RECEIVED_FLAG
     global ACCEPT_RECEIVED_FLAG
+    global isLeader
+    global ACKED_BALLOT
+    global INPUT
     data = json.loads(data)
     pid = data['pid']
-    print ('Message from client ' + str(pid))
-    print(f"Sequence Number is {SEQ_NUM}")
+    print (f"{data['type']} Message from client {pid}")
+    # print(f"Sequence Number is {SEQ_NUM}")
 
     if data['type'] == 'prepare' and (not CRASH_FLAG):
-        print("Prepare Message Received")
+        print(f"Prepare Message Received from {pid}")
         ballotNum = BallotNum.load(data['ballot'])
-        if ballotNum.isHigher(BALLOT_NUM) and SEQ_NUM < data['seq_num']: #DOESNT ALLOW USER WITH LOWER SEQNUM TO BECOME LEADER
+        print(f"Ballot mine: {BALLOT_NUM.num},{BALLOT_NUM.pid}")
+        print(f"Ballot received: {ballotNum.num},{ballotNum.pid}")
+        if ballotNum.isHigher(BALLOT_NUM) and chain.getLastSeqNum() < data['seq_num']: #DOESNT ALLOW USER WITH LOWER SEQNUM TO BECOME LEADER
+            isLeader = False
             PREPARE_RECEIVED_FLAG = True 
             # WE NEED TO RESET EARLIER TIMERS HERE SO THAT FOLLOWER DOESNT START PAXOS
             FOLLOWER_FLAG_RESET_TIMER = True
             FOLLOWER_FLAG_ACCEPT = False
             FOLLOWER_FLAG_COMMIT = False
-                
-            BALLOT_NUM = ballotNum
+            ACKED_BALLOT.num = ballotNum.num
+            ACKED_BALLOT.pid = ballotNum.pid
+            BALLOT_NUM.num = ballotNum.num
+            
             val = []
             for aval in ACCEPT_VAL:
                 val.append(aval.toJSON())
@@ -293,14 +324,13 @@ def processMessage(data):
             threading.Thread(target = sendMessage, args = (message, pid,)).start()
             print ('Ack message sent to client '+str(pid))
             #ADDED BY MAYURESH
-            print("Timer started for ACCEPT messages")
-            threading.Thread(target = startTimerForFollowerAccept, args = (15,)).start()
+            print(f"Timer started for ACCEPT messages of {pid}")
+            threading.Thread(target = startTimerForFollowerAccept, args = (15,ballotNum,pid,)).start()
             
          
-    elif data['type'] == 'ack' and (not CRASH_FLAG):
-        print("ACK Message Received")
+    elif data['type'] == 'ack' and (not CRASH_FLAG) and isLeader:
+        print(f"ACK Message Received from {pid}")
         #  check for majority and send accept to followers
-        # incrementInterval(5)
         incrementAckCount()
         acceptBallot = BallotNum.load(data['accept_ballot'])
         acceptVal = data['accept_val']
@@ -308,15 +338,16 @@ def processMessage(data):
             MAX_ACK_NUM = acceptBallot
             MAX_ACK_VAL = acceptVal[:]
                    
-    elif data['type'] == 'accept' and PREPARE_RECEIVED_FLAG and (not CRASH_FLAG):
-        print("ACCEPT Message Received")
+    elif data['type'] == 'accept' and PREPARE_RECEIVED_FLAG and (not CRASH_FLAG) and not isLeader:
+        print(f"ACCEPT Message Received from {pid}")
         ballotNum = BallotNum.load(data['ballot'])
-        if ballotNum.isHigher(BALLOT_NUM):
+        if ACKED_BALLOT.isEqual(ballotNum):
             PREPARE_RECEIVED_FLAG = False
             ACCEPT_RECEIVED_FLAG = True
             FOLLOWER_FLAG_ACCEPT = True
-            BALLOT_NUM = ballotNum
-            ACCEPT_NUM = ballotNum
+            BALLOT_NUM.num = ballotNum.num
+            ACCEPT_NUM.num = ballotNum.num
+            ACCEPT_NUM.pid = ballotNum.pid
             val = []
             for aval in transaction_log:
                 val.append(aval.toJSON())
@@ -332,12 +363,11 @@ def processMessage(data):
             threading.Thread(target = sendMessage, args = (message, pid,)).start()
             print ('Accepted message sent to client '+str(pid))
             #ADDED BY MAYURESH
-            print("Timer started for COMMIT messages")
-            threading.Thread(target = startTimerForCommit, args = (15,)).start()        
+            print(f"Timer started for COMMIT messages for {pid}")
+            threading.Thread(target = startTimerForCommit, args = (15,ballotNum,pid,)).start()        
   
-    elif data['type'] == 'accepted' and (not CRASH_FLAG):
-        print("ACCEPTED Message Received")
-        # incrementInterval(5)
+    elif data['type'] == 'accepted' and (not CRASH_FLAG) and isLeader:
+        print(f"ACCEPTED Message Received from {pid}")
         incrementAcceptCount()
         #CHANGED BY MAYURESH
         CLIENT_SEQ_NUM[data['pid']] = data['seq_num']
@@ -349,9 +379,9 @@ def processMessage(data):
         for aval in data['value']:
             transaction_log.append(Transaction.load(aval)) # This transaction log has to be checked before adding 
   
-    elif data['type'] == 'commit' and ACCEPT_RECEIVED_FLAG and (not CRASH_FLAG):
-        print("COMMIT Message Received")
-        print ('Decide message from leader')
+    elif data['type'] == 'commit' and ACCEPT_RECEIVED_FLAG and (not CRASH_FLAG) and not isLeader:
+        print(f"COMMIT Message Received from {pid}")
+        print (f'Decide message from leader')
         FOLLOWER_FLAG_COMMIT = True
         ACCEPT_RECEIVED_FLAG = False
         # Follower and Leader must check what SEQUENCE NUMBERS ARE MISSING FROM THEIR LOGS
@@ -373,6 +403,12 @@ def processMessage(data):
         SEQ_NUM = chain.append(SEQ_NUM+1, val)
         transaction_log.clear()
         chain.printChain()
+        if INPUT != "":
+            print(f"Pending transaction: {INPUT}")
+            handleTransaction(INPUT)
+            INPUT = ""
+            
+        
   
 def getBalance(pid):
     amount = chain.getBalance(pid)
@@ -396,20 +432,24 @@ def handleTransaction(data):
     
 def processInput(data):
     global CRASH_FLAG
+    global isLeader
+    global INPUT
     dataList = data.split(',')
     if dataList[0] == 't':
         # Update getBalance to get balance
         receiver = int(dataList[1])
         amount = int(dataList[2])
         amountBefore = getBalance(PID)
-        print(f"{PID} is {receiver}")
+        # print(f"{PID} is {receiver}")
         if amountBefore >= amount and PID != receiver:
             transaction_log.append(Transaction(PID, receiver, amount))
             print("SUCCESS")
             print("Balance before: $"+str(amountBefore))
             print("Balance after: $"+str(amountBefore-amount))
+            INPUT = ""
         elif PID != receiver:
             # Run Paxos
+            print("Paxos started normally")
             sendPrepare()
         else:
             print("You cannot send transaction to yourself!")
@@ -418,11 +458,14 @@ def processInput(data):
         if len(dataList) == 1:
             dataList.append(str(PID))
         print("Balance: $"+str(getBalance(int(dataList[1]))))
+        INPUT = ""
 
     elif dataList[0] == 'tlog' :
+        INPUT = ""
         printLog()
     
     elif dataList[0] == 'blog' :
+        INPUT = ""
         print("Block Chain is:")
         chain.printChain()
         print("###########################################")
@@ -430,16 +473,18 @@ def processInput(data):
     # CHANGED BY MAYURESH    
     elif dataList[0] == "s" : #TO CRASH the client
         # ALSO ASK FOR TIME IT WANTS TO STOP
+        INPUT = ""
         CRASH_FLAG = True
         FOLLOWER_FLAG_ACCEPT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         FOLLOWER_FLAG_COMMIT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         FOLLOWER_FLAG_RESET_TIMER = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
-        time.sleep(int(input("Enter time to crash"))) #??????????????????????????
+        time.sleep(int(dataList[1])) #??????????????????????????
         print("Server regained conciousness")
         CRASH_FLAG = False
         #DO NOTHING from NOW till new transaction
 
 def createServer(pid):
+    global INPUT
     try: 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -456,7 +501,13 @@ def createServer(pid):
             data = conn.recv(BUFFER_SIZE).decode('utf-8')
             if not data:
                 break
-            processMessage(data)
+            inp_data = data.split()
+            if inp_data[0] == "trans":
+                INPUT = inp_data[1]
+                print(f"Input: {inp_data[1]}")
+                processInput(inp_data[1])
+            else:
+                processMessage(data)
         except expression as identifier:
             print ("Socket error in receiving message")
    
