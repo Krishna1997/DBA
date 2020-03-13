@@ -210,6 +210,7 @@ def startTimerForAccept(start=15):
                 SEQ_NUM = chain.append(SEQ_NUM, transaction_log)
                 transaction_log.clear()
                 chain.printChain()
+                isLeader = False # No more a leader
                 if INPUT != "":
                     print(f"Pending transaction: {INPUT}")
                     handleTransaction(INPUT)
