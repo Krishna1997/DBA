@@ -5,6 +5,7 @@ import threading
 from threading import Thread, Lock
 import time
 from block import Transaction, BlockChain, BallotNum
+from datetime import datetime
 
 PID = int(sys.argv[1])
 print("Process id: ", PID)
@@ -434,6 +435,10 @@ def processInput(data):
     global CRASH_FLAG
     global isLeader
     global INPUT
+    global FOLLOWER_FLAG_ACCEPT
+    global FOLLOWER_FLAG_COMMIT
+    global FOLLOWER_FLAG_RESET_TIMER
+    
     dataList = data.split(',')
     if dataList[0] == 't':
         # Update getBalance to get balance
@@ -474,24 +479,25 @@ def processInput(data):
     elif dataList[0] == "s" : #TO CRASH the client
         # ALSO ASK FOR TIME IT WANTS TO STOP
         INPUT = ""
-        print("Server is unconcious!!!")
+        print(f"Server is unconcious!!!")
         CRASH_FLAG = True
         FOLLOWER_FLAG_ACCEPT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         FOLLOWER_FLAG_COMMIT = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         FOLLOWER_FLAG_RESET_TIMER = True #CRASH, SO WE WILL SET THIS TO TRUE SO THAT IT DOESNT START PAXOS
         time.sleep(int(dataList[1])) #??????????????????????????
-        print("Server regained conciousness!!!")
+        print(f"Server regained conciousness!!!")
         CRASH_FLAG = False
         #DO NOTHING from NOW till new transaction
 
 def createServer(pid):
     global INPUT
+    global CRASH_FLAG
     try: 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('', PORT))         
         print("socket binded to %s" %(PORT))
-        s.listen(5)      
+        s.listen(1)      
         print("socket successfully created")
     except socket.error as err: 
         print("socket creation failed with error %s" %(err)) 
@@ -503,11 +509,13 @@ def createServer(pid):
             if not data:
                 break
             inp_data = data.split()
-            if inp_data[0] == "trans":
+            # print(f"inp data received at {datetime.now()} : {data}")
+            if inp_data[0] == "trans" and not CRASH_FLAG:
                 INPUT = inp_data[1]
                 print(f"Input: {inp_data[1]}")
                 processInput(inp_data[1])
-            else:
+            elif not CRASH_FLAG:
+                # print(f"calling process message at {datetime.now()}")
                 processMessage(data)
         except expression as identifier:
             print ("Socket error in receiving message")
